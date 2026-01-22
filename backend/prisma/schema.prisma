@@ -1,0 +1,181 @@
+// Prisma schema for FIRMAS backend
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id String @id @default(uuid())
+  email String @unique
+  password String
+  name String?
+  avatarUrl String?
+
+  // Subscription info
+  subscriptionTier SubscriptionTier @default(FREE)
+  subscriptionStatus SubscriptionStatus?
+  stripeCustomerId String? @unique
+  stripeSubscriptionId String? @unique
+  trialEndsAt DateTime?
+  subscriptionEndsAt DateTime?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  signatureAnalyses SignatureAnalysis[]
+  compatibilityAnalyses CompatibilityAnalysis[]
+  generatedSignatures GeneratedSignature[]
+  pdfReports PdfReport[]
+  referrals Referral[] @relation("Referrer")
+  referredBy Referral? @relation("Referred")
+
+  @@map("users")
+}
+
+enum SubscriptionTier {
+  FREE
+  PREMIUM
+  PREMIUM_PLUS
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  TRIALING
+}
+
+// Signature Analysis model
+model SignatureAnalysis {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  signatureImageUrl String
+  analysisData Json // All 20 characteristics stored as JSON
+  analysisType AnalysisType @default(BASIC)
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  pdfReports PdfReport[]
+
+  @@map("signature_analyses")
+  @@index([userId])
+}
+
+enum AnalysisType {
+  BASIC     // Free tier - 5 characteristics
+  PROFESSIONAL // Premium tier - 20 characteristics
+}
+
+// Compatibility Analysis model
+model CompatibilityAnalysis {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  partnerSignatureUrl String
+  partnerName String?
+  compatibilityScore Int // 0-100
+  compatibilityData Json // Detailed analysis
+  isPublic Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@map("compatibility_analyses")
+  @@index([userId])
+}
+
+// Generated Signature model (AI-generated)
+model GeneratedSignature {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  userName String
+  personalityInput Json // Questionnaire responses
+  generatedImages Json // Array of image URLs
+  selectedImageUrl String?
+  generationCount Int @default(1)
+
+  createdAt DateTime @default(now())
+
+  @@map("generated_signatures")
+  @@index([userId])
+}
+
+// PDF Report model
+model PdfReport {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  analysisId String?
+  analysis SignatureAnalysis? @relation(fields: [analysisId], references: [id])
+
+  pdfUrl String
+  reportType ReportType
+
+  generatedAt DateTime @default(now())
+
+  @@map("pdf_reports")
+  @@index([userId])
+}
+
+enum ReportType {
+  PROFESSIONAL
+  COMPATIBILITY
+}
+
+// Referral model
+model Referral {
+  id String @id @default(uuid())
+  referrerId String
+  referrer User @relation("Referrer", fields: [referrerId], references: [id])
+
+  referredEmail String
+  referredUserId String? @unique
+  referredUser User? @relation("Referred", fields: [referredUserId], references: [id])
+
+  referralCode String @unique
+  status ReferralStatus @default(PENDING)
+  rewardGranted Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@map("referrals")
+  @@index([referrerId])
+  @@index([referralCode])
+}
+
+enum ReferralStatus {
+  PENDING
+  COMPLETED
+}
+
+// Usage Tracking model (for quotas)
+model UsageTracking {
+  id String @id @default(uuid())
+  userId String
+
+  month String // Format: "2026-01"
+  analysisCount Int @default(0)
+  aiGenerationCount Int @default(0)
+  compatibilityCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, month])
+  @@map("usage_tracking")
+  @@index([userId])
+}
